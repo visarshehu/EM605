@@ -1,0 +1,211 @@
+---
+# ServiceAccount for MySQL configuration management
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mysql-config-sa
+  labels:
+    app: mysql-demo
+    component: database
+
+---
+# Role with permissions for configuration management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mysql-config-role
+  labels:
+    app: mysql-demo
+    component: database
+rules:
+# Read ConfigMaps and Secrets
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+# Read pods for debugging
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+# Create events for configuration changes
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+# Access to persistent volume claims
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list"]
+
+---
+# RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mysql-config-binding
+  labels:
+    app: mysql-demo
+    component: database
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mysql-config-role
+subjects:
+- kind: ServiceAccount
+  name: mysql-config-sa
+  namespace: default
+
+---
+# Headless service for StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-config-demo-headless
+  labels:
+    app: mysql-demo
+    component: database
+    service-type: headless
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+  clusterIP: None
+  selector:
+    app: mysql-demo
+    component: database
+
+---
+# Regular service for external access
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-config-demo
+  labels:
+    app: mysql-demo
+    component: database
+    service-type: cluster-ip
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+    targetPort: 3306
+  selector:
+    app: mysql-demo
+    component: database
+
+---
+# Configuration validation job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mysql-config-validation
+  labels:
+    app: mysql-demo
+    component: validation
+spec:
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: mysql-demo
+        component: validation
+    spec:
+      serviceAccountName: mysql-config-sa
+      restartPolicy: Never
+      containers:
+      - name: config-validator
+        image: mysql:8.0
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "🔍 Validating MySQL Configuration and Secrets..."
+          echo "=============================================="
+          
+          # Wait for MySQL to be ready
+          echo "Waiting for MySQL to be available..."
+          while ! nc -z mysql-config-demo-headless 3306; do
+            echo "Waiting for MySQL..."
+            sleep 5
+          done
+          echo "✅ MySQL is accessible"
+          
+          # Test root connection
+          echo "Testing root connection..."
+          mysql -h mysql-config-demo-headless -u root -p${MYSQL_ROOT_PASSWORD} -e "SELECT 'Root connection successful' as test_result;"
+          
+          # Test application user connection
+          echo "Testing application user connection..."
+          mysql -h mysql-config-demo-headless -u ${MYSQL_USER} -p${MYSQL_PASSWORD} -e "SELECT 'App user connection successful' as test_result;"
+          
+          # Verify database exists
+          echo "Verifying database exists..."
+          mysql -h mysql-config-demo-headless -u root -p${MYSQL_ROOT_PASSWORD} -e "SHOW DATABASES;" | grep -q "${DATABASE_NAME}"
+          if [ $? -eq 0 ]; then
+            echo "✅ Database ${DATABASE_NAME} exists"
+          else
+            echo "❌ Database ${DATABASE_NAME} not found"
+            exit 1
+          fi
+          
+          # Check configuration settings
+          echo "Checking configuration settings..."
+          MAX_CONN=$(mysql -h mysql-config-demo-headless -u root -p${MYSQL_ROOT_PASSWORD} -sNe "SELECT @@max_connections;")
+          echo "Max connections: $MAX_CONN"
+          
+          CHARSET=$(mysql -h mysql-config-demo-headless -u root -p${MYSQL_ROOT_PASSWORD} -sNe "SELECT @@character_set_server;")
+          echo "Character set: $CHARSET"
+          
+          # Verify tables exist
+          echo "Verifying application tables..."
+          TABLE_COUNT=$(mysql -h mysql-config-demo-headless -u root -p${MYSQL_ROOT_PASSWORD} ${DATABASE_NAME} -sNe "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '${DATABASE_NAME}';")
+          echo "Tables found: $TABLE_COUNT"
+          
+          if [ "$TABLE_COUNT" -gt 0 ]; then
+            echo "✅ Application tables exist"
+          else
+            echo "❌ No application tables found"
+            exit 1
+          fi
+          
+          # Check SSL configuration (if enabled)
+          SSL_STATUS=$(mysql -h mysql-config-demo-headless -u root -p${MYSQL_ROOT_PASSWORD} -sNe "SHOW STATUS LIKE 'Ssl_cipher';" | grep -c "Ssl_cipher")
+          if [ "$SSL_STATUS" -gt 0 ]; then
+            echo "✅ SSL is configured"
+          else
+            echo "ℹ️  SSL not configured or not in use"
+          fi
+          
+          echo "✅ Configuration validation completed successfully!"
+          
+        env:
+        # Credentials from secrets
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-advanced-secret
+              key: root-password
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: mysql-advanced-secret
+              key: user-name
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-advanced-secret
+              key: user-password
+        
+        # Configuration from ConfigMap
+        - name: DATABASE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: mysql-config-advanced
+              key: database_name
+        
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"

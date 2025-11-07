@@ -1,0 +1,62 @@
+version: '3.8'
+
+# Development override configuration
+services:
+  mysql:
+    ports:
+      - "3307:3306"  # Use different port to avoid conflicts
+    environment:
+      MYSQL_ROOT_PASSWORD: devpassword
+      MYSQL_DATABASE: todoapp_dev
+      MYSQL_USER: devuser
+      MYSQL_PASSWORD: devpassword
+    volumes:
+      - mysql_dev_data:/var/lib/mysql
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # Mount additional dev scripts if needed
+      # - ./database/dev-seed.sql:/docker-entrypoint-initdb.d/dev-seed.sql:ro
+
+  backend:
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=mysql
+      - DB_USER=devuser
+      - DB_PASSWORD=devpassword
+      - DB_NAME=todoapp_dev
+    volumes:
+      # Mount source code for hot reloading
+      - ./backend:/app
+      - /app/node_modules
+    command: npm run dev
+    ports:
+      - "3001:3000"
+
+  frontend:
+    environment:
+      - NODE_ENV=development
+      - REACT_APP_API_URL=http://localhost:3001/api
+    volumes:
+      # Mount source code for hot reloading
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm start
+    ports:
+      - "3000:3000"
+    stdin_open: true  # Keep STDIN open for React dev server
+    tty: true
+
+  # Additional services for development
+  adminer:
+    image: adminer:4.8.1
+    container_name: todo-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - todo-network
+    depends_on:
+      - mysql
+
+volumes:
+  mysql_dev_data:
+    driver: local

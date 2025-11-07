@@ -1,0 +1,36 @@
+# Ignore these files and directories when building Docker images
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Environment files
+.env
+.env.*
+
+# Node modules (will be installed in container)
+node_modules/
+npm-debug.log*
+
+# Build artifacts
+build/
+dist/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Docker files (not needed in container)
+Dockerfile
+docker-compose*.yml
+.dockerignore

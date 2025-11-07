@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-db-job
+spec:
+  template:
+    spec:
+      containers:
+      - name: init-db
+        image: mysql:8
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "Initializing database...";
+          mysql -h mysql-service -u root -p1234567890 <<EOF
+          CREATE DATABASE IF NOT EXISTS students;
+          USE students;
+          CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(50),
+            email VARCHAR(50)
+          );
+          INSERT INTO users (name, email)
+          VALUES ('Visar Shehu', 'v.shehu@seeu.edu.mk');
+          EOF
+      restartPolicy: Never
+      backoffLimit: 3

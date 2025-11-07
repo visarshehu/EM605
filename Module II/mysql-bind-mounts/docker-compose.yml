@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-bind-mounts
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpassword
+    ports:
+      - "3307:3306"  # Different port to avoid conflicts
+    volumes:
+      # Bind mount for MySQL data (direct host directory mapping)
+      - ./mysql-data:/var/lib/mysql
+      # Bind mount for initialization scripts
+      - ./init:/docker-entrypoint-initdb.d:ro
+      # Bind mount for configuration files (optional)
+      - ./config:/etc/mysql/conf.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      timeout: 20s
+      retries: 10
+      start_period: 30s
+      interval: 30s
+
+  # MySQL client for demonstration
+  mysql-client:
+    image: mysql:8.0
+    container_name: mysql-client-bind
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      # Bind mount for backup/export directory
+      - ./backups:/backups
+    command: >
+      sh -c "
+        echo 'Waiting for MySQL to be ready...' &&
+        sleep 5 &&
+        echo 'Connecting to MySQL and running queries...' &&
+        mysql -h mysql -u root -prootpassword testdb -e 'SHOW TABLES;' &&
+        mysql -h mysql -u root -prootpassword testdb -e 'SELECT * FROM products LIMIT 5;' &&
+        echo 'Creating backup in bind-mounted directory...' &&
+        mysqldump -h mysql -u root -prootpassword testdb > /backups/testdb_backup.sql &&
+        echo 'Backup created at ./backups/testdb_backup.sql' &&
+        echo 'Data persisted in bind mount!' &&
+        tail -f /dev/null
+      "

@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-named-volumes
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: testdb
+      MYSQL_USER: testuser
+      MYSQL_PASSWORD: testpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      # Named volume for MySQL data (managed by Docker)
+      - mysql_data:/var/lib/mysql
+      # Bind mount for initialization scripts (from host)
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      timeout: 20s
+      retries: 10
+      start_period: 30s
+      interval: 30s
+
+  # MySQL client for demonstration
+  mysql-client:
+    image: mysql:8.0
+    container_name: mysql-client-named
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: >
+      sh -c "
+        echo 'Waiting for MySQL to be ready...' &&
+        sleep 5 &&
+        echo 'Connecting to MySQL and running queries...' &&
+        mysql -h mysql -u root -prootpassword testdb -e 'SHOW TABLES;' &&
+        mysql -h mysql -u root -prootpassword testdb -e 'SELECT * FROM users LIMIT 5;' &&
+        echo 'Data persisted in named volume!' &&
+        tail -f /dev/null
+      "
+
+# Named volumes section - Docker manages these volumes
+volumes:
+  mysql_data:
+    driver: local
+    # Optional: specify driver options
+    driver_opts:
+      type: none
+      o: bind
+      device: /tmp/mysql_named_volume_demo  # This creates a bind to a specific location for demo
