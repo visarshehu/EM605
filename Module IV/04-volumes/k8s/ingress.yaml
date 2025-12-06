@@ -1,0 +1,60 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: todo-app-ingress
+  namespace: todo-volumes
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: todo.local
+    http:
+      paths:
+      # Frontend - serve React app
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: todo-frontend-service
+            port:
+              number: 80
+      # Backend API - route /api/* to backend service
+      - path: /api(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: todo-backend-service
+            port:
+              number: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: todo-app-ingress-ip
+  namespace: todo-volumes
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      # Frontend - serve React app
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: todo-frontend-service
+            port:
+              number: 80
+      # Backend API - route /api/* to backend service
+      - path: /api(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: todo-backend-service
+            port:
+              number: 8000
